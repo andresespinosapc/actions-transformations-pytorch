@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 import os, pickle
 from torchvision import transforms
 
-class ActionTransformation(Dataset):
+class UCF101(Dataset):
     def __init__(self, root, transform = None):
         self.transform = transform
         if transform is None:

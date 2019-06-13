@@ -12,12 +12,12 @@ import numpy as np
 
 from model import ActTransNet, FrameFeats
 from dataset import UCF101
-
+import time
 
 frame_feats_dim = 512
 model_dim = 512
 n_actions = 101
-batch_size = 4
+batch_size = 2
 batch_size_to_step = 50
 iter_to_step = int(batch_size_to_step / batch_size)
 n_frames = 25
@@ -47,7 +47,7 @@ def train(epoch, log_path):
     for i, (frames_p, frames_e, action) in enumerate(pbar):
         cur_batch_size = frames_p.shape[0]
         frames_p, frames_e, action = frames_p.to(device),frames_e.to(device),action.to(device)
-        
+    
         p_transformed, e_embed = net(frames_p, frames_e, action)
         y = -1 * torch.ones((cur_batch_size, p_transformed.shape[1]))
         y[:,action] = 1
@@ -60,12 +60,12 @@ def train(epoch, log_path):
             y.view(output_loss_dim).to(device)
         )
         # print("loss: ", loss.item())
-
+        
         loss.backward()
         if (i+1) % iter_to_step == 0:
             optimizer.step()
             optimizer.zero_grad()
-        
+
         sim = F.cosine_similarity(p_transformed, e_embed, dim=2)
         # print('sim:', sim)
         prediction = sim.argmax(dim=1).to(device)

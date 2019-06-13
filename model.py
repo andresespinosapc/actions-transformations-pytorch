@@ -4,6 +4,8 @@ from torchvision import models
 import torch
 import numpy as np
 
+import time
+
 #from models import rgb_resnet152
 from network import resnet101
 
@@ -123,11 +125,10 @@ class ActTransNet(nn.Module):
                         best_zp, best_ze = zp, ze
                         min_distance = loss
 
-        self.frame_net_p.train(self.train)
-        self.frame_net_e.train(self.train)
-        self.transformation_net.train(self.train)
+        self.frame_net_p.train(self.training)
+        self.frame_net_e.train(self.training)
+        self.transformation_net.train(self.training)
         precondition = frames_feats_p[:, :best_zp, :]
         effect = frames_feats_e[:, best_ze:, :]
         p_transformed, e_embed = self.transformation_net(precondition, effect)
-
         return p_transformed, e_embed

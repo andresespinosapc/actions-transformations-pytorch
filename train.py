@@ -14,11 +14,12 @@ from model import ActTransNet, FrameFeats
 from dataset import UCF101
 
 
-input_dim = (3, 224, 224)
 frame_feats_dim = 512
 model_dim = 512
 n_actions = 101
-batch_size = 5
+batch_size = 4
+batch_size_to_step = 50
+iter_to_step = int(batch_size_to_step / batch_size)
 n_frames = 25
 zp_limits = (int(math.ceil(1/3 * n_frames)), int(math.ceil(1/2 * n_frames - 1)))
 ze_limits = (int(math.floor(1/2 * n_frames + 1)), int(math.floor(2/3 * n_frames)))
@@ -39,40 +40,15 @@ def train(epoch, log_path):
 
     train_log_path = os.path.join(log_path, 'train_log.txt')
     log_data = ''
-    for frames_p, frames_e, action in pbar:
+    net.train(True)
+    optimizer.zero_grad()
+    loss_list = []
+    acc_list = []
+    for i, (frames_p, frames_e, action) in enumerate(pbar):
         cur_batch_size = frames_p.shape[0]
         frames_p, frames_e, action = frames_p.to(device),frames_e.to(device),action.to(device)
-        #frames_p = frames[:, :zp_limits[1]+1].contiguous()
-        #frames_e = frames[:, ze_limits[0]:].contiguous()
-        #del frames
-
-        optimizer.zero_grad()
-        frames_feats_p = frame_net_p(frames_p.view(-1, *input_dim)).view(cur_batch_size, zp_limits[1], frame_feats_dim)
-        frames_feats_e = frame_net_e(frames_e.view(-1, *input_dim)).view(cur_batch_size, n_frames - ze_limits[0], frame_feats_dim)
-
-        # Search latent variables
-        net.train(False)
-        with torch.no_grad():
-            best_zp = None
-            best_ze = None
-            min_distance = float('inf')
-            for zp in zp_possible:
-                for ze in range(n_ze_possible):
-                    precondition = frames_feats_p[:, :zp, :]
-                    effect = frames_feats_e[:, ze:,:]
-                    p_transformed, e_embed = net(precondition, effect, action)
-                    # Obtain distance
-                    is_positive = torch.ones((cur_batch_size,)).to(device)
-                    loss = criterion(p_transformed, e_embed, is_positive)
-                    # If it is better than the last one, update best zp and ze
-                    if loss < min_distance:
-                        best_zp, best_ze = zp, ze
-                        min_distance = loss
-
-        net.train(True)
-        precondition = frames_feats_p[:, :best_zp, :]
-        effect = frames_feats_e[:, best_ze:, :]
-        p_transformed, e_embed = net(precondition, effect)
+        
+        p_transformed, e_embed = net(frames_p, frames_e, action)
         y = -1 * torch.ones((cur_batch_size, p_transformed.shape[1]))
         y[:,action] = 1
         y = y.to(device)
@@ -84,20 +60,25 @@ def train(epoch, log_path):
             y.view(output_loss_dim).to(device)
         )
         # print("loss: ", loss.item())
+
         loss.backward()
-        optimizer.step()
+        if (i+1) % iter_to_step == 0:
+            optimizer.step()
+            optimizer.zero_grad()
         
         sim = F.cosine_similarity(p_transformed, e_embed, dim=2)
-        print('sim:', sim)
+        # print('sim:', sim)
         prediction = sim.argmax(dim=1).to(device)
-        print('prediction:', prediction)
-        print('action:', action)
+        # print('prediction:', prediction)
+        # print('action:', action)
         accuracy = ((prediction == action).sum() / action.shape[0]).item()
         # print('Accuracy:', accuracy)
 
+        loss_list.append(loss.item())
+        acc_list.append(accuracy)
         pbar.set_description(
             'Epoch: {}; Loss: {:.5f}; Acc: {:.5f}'.format(
-                epoch + 1, loss.item(), accuracy
+                epoch + 1, np.mean(loss_list), np.mean(acc_list)
             )
         )
 
@@ -118,41 +99,17 @@ def valid(epoch, log_path):
     dataset = iter(valid_set)
     pbar = tqdm(dataset)
 
-    acc_list = []
     net.train(False)
     valid_log_path = os.path.join(log_path, 'val_log.txt')
     log_data = ''
+    loss_list = []
+    acc_list = []
     with torch.no_grad():
         for frames_p, frames_e, action in pbar:
             cur_batch_size = frames_p.shape[0]
             frames_p, frames_e, action = frames_p.to(device), frames_e.to(device), action.to(device)
-            #frames_p = frames[:, :zp_limits[1]+1].contiguous()
-            #frames_e = frames[:, ze_limits[0]:].contiguous()
-
-            # Calculate optimal zp and ze values
-            frames_feats_p = frame_net_p(frames_p.view(-1, *input_dim)).view(cur_batch_size, zp_limits[1], frame_feats_dim)
-            frames_feats_e = frame_net_e(frames_e.view(-1, *input_dim)).view(cur_batch_size, n_frames - ze_limits[0], frame_feats_dim)
-
-            best_zp = None
-            best_ze = None
-            min_distance = float('inf')
-            for zp in zp_possible:
-                for ze in range(n_ze_possible):
-                    precondition = frames_feats_p[:, :zp, :]
-                    effect = frames_feats_e[:, ze:,:]
-                    p_transformed, e_embed = net(precondition, effect, action)
-                    # Obtain distance
-                    is_positive = torch.ones((cur_batch_size,)).to(device)
-                    loss = criterion(p_transformed, e_embed, is_positive)
-                    # If it is better than the last one, update best zp and ze
-                    if loss < min_distance:
-                        best_zp, best_ze = zp, ze
-                        min_distance = loss
-
-            # Evaluate network
-            precondition = frames_feats_p[:, :best_zp, :]
-            effect = frames_feats_e[:, best_ze:, :]
-            p_transformed, e_embed = net(precondition, effect)
+            
+            p_transformed, e_embed = net(frames_p, frames_e, action)
             y = -1 * torch.ones((cur_batch_size, p_transformed.shape[1]))
             y[:,action] = 1
             y = y.to(device)
@@ -176,11 +133,12 @@ def valid(epoch, log_path):
             sim = F.cosine_similarity(p_transformed, e_embed, dim=2)
             prediction = sim.argmax(dim=1).to(device)
             accuracy = ((prediction == action).sum() / action.shape[0]).item()
+            
+            loss_list.append(loss.item())
             acc_list.append(accuracy)
-
             pbar.set_description(
                 'Epoch: {}; Loss: {:.5f}; Acc: {:.5f}'.format(
-                    epoch + 1, loss.item(), accuracy
+                    epoch + 1, np.mean(loss_list), np.mean(acc_list)
                 )
             )
 
@@ -205,21 +163,20 @@ if __name__ == '__main__':
     parser.add_argument('--n_epochs', required=False, default=20, help='the number of epochs to run')
     config = parser.parse_args()
 
-    frame_net_p = FrameFeats(frame_feats_dim)
-    frame_net_e = FrameFeats(frame_feats_dim)
-    net = ActTransNet(frame_feats_dim, model_dim, n_actions)
+    criterion = nn.CosineEmbeddingLoss(margin=.5)
+    
+    net = ActTransNet(frame_feats_dim, model_dim, n_actions, zp_limits, ze_limits, criterion)
     
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
-        frame_net_p = nn.DataParallel(frame_net_p)
-        frame_net_e = nn.DataParallel(frame_net_e)
-        #net = nn.DataParallel(net)
-    frame_net_p = frame_net_p.to(device)
-    frame_net_e = frame_net_e.to(device)
-    net = net.to(torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'))
-    
-    criterion = nn.CosineEmbeddingLoss(margin=.5)
-    optimizer = optim.Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        net = nn.DataParallel(net)
+    net = net.to(device)
+
+    optimizer = optim.Adam(
+        net.parameters(),
+        lr=1e-4,
+        # weight_decay=1e-4,
+    )
 
     if config.experiment is None:
         print('Starting new experiment...')

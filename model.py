@@ -7,6 +7,9 @@ import numpy as np
 #from models import rgb_resnet152
 from network import resnet101
 
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 class FrameFeats(nn.Module):
     def __init__(self, out_dim):
         super().__init__()
@@ -28,7 +31,7 @@ class FrameFeats(nn.Module):
         #return self.fc(self.resnet_wo_last(frame))
         return self.pretrained_resnet(frame)
 
-class ActTransNet(nn.Module):
+class TransformationNet(nn.Module):
     def __init__(self, input_dim, dim, n_actions):
         super().__init__()
         self.dim = dim
@@ -59,17 +62,72 @@ class ActTransNet(nn.Module):
             p_transformed = np.squeeze(torch.bmm(selected_transformations, p_embed.unsqueeze(2)))
         else:
             # No he revisado esta parte 
-            p_transformed = torch.empty((batch_size, self.n_actions, self.dim))
-            e_embed_copy = torch.empty((batch_size, self.n_actions, self.dim))
+            p_transformed = torch.empty((batch_size, self.n_actions, self.dim)).to(device)
+            # e_embed_copy = torch.empty((batch_size, self.n_actions, self.dim)).to(device)
             for i in range(self.n_actions):
                 p_transformed[:, i, :] = np.squeeze(torch.bmm(
                     self.W_tranformations[i].expand(batch_size, self.dim, self.dim), 
                     p_embed.unsqueeze(2)))
-                e_embed_copy[:, i, :] = e_embed
-            e_embed = e_embed_copy
-            # e_embed = e_embed.unsqueeze(1).expand(batch_size, self.n_actions, self.dim)
+                # e_embed_copy[:, i, :] = e_embed
+            # e_embed = e_embed_copy
+            e_embed = e_embed.unsqueeze(1).expand(batch_size, self.n_actions, self.dim).contiguous()
 
         # results = []
         # for action_idx in actions_idx:
         #     results.append(self.T_list[action_idx](p_embed))
+        return p_transformed, e_embed
+
+class ActTransNet(nn.Module):
+    def __init__(self, frame_feats_dim, model_dim, n_actions, zp_limits, ze_limits, criterion):
+        super().__init__()
+        self.frame_feats_dim = frame_feats_dim
+        self.criterion = criterion
+
+        self.zp_limit_end = zp_limits[1]
+        self.ze_limit_start = ze_limits[0]
+        self.zp_possible = list(range(zp_limits[0], zp_limits[1] + 1))
+        self.ze_possible = list(range(ze_limits[0], ze_limits[1] + 1))
+        self.n_zp_possible = zp_limits[1] - zp_limits[0] + 1
+        self.n_ze_possible = ze_limits[1] - ze_limits[0] + 1
+
+        self.input_dim = (3, 224, 224)
+        self.frame_net_p = FrameFeats(frame_feats_dim)
+        self.frame_net_e = FrameFeats(frame_feats_dim)
+        self.transformation_net = TransformationNet(frame_feats_dim, model_dim, n_actions)
+
+    def forward(self, frames_p, frames_e, action):
+        batch_size = frames_p.shape[0]
+        n_frames = frames_p.shape[1]
+
+        frames_feats_p = self.frame_net_p(frames_p.view(-1, *self.input_dim)).view(batch_size, self.zp_limit_end, self.frame_feats_dim)
+        frames_feats_e = self.frame_net_e(frames_e.view(-1, *self.input_dim)).view(batch_size, n_frames - self.ze_limit_start, self.frame_feats_dim)
+
+        # Search latent variables
+        self.frame_net_p.train(False)
+        self.frame_net_e.train(False)
+        self.transformation_net.train(False)
+        with torch.no_grad():
+            best_zp = None
+            best_ze = None
+            min_distance = float('inf')
+            for zp in self.zp_possible:
+                for ze in range(self.n_ze_possible):
+                    precondition = frames_feats_p[:, :zp, :]
+                    effect = frames_feats_e[:, ze:,:]
+                    p_transformed, e_embed = self.transformation_net(precondition, effect, action)
+                    # Obtain distance
+                    is_positive = torch.ones((batch_size,)).to(device)
+                    loss = self.criterion(p_transformed, e_embed, is_positive)
+                    # If it is better than the last one, update best zp and ze
+                    if loss < min_distance:
+                        best_zp, best_ze = zp, ze
+                        min_distance = loss
+
+        self.frame_net_p.train(self.train)
+        self.frame_net_e.train(self.train)
+        self.transformation_net.train(self.train)
+        precondition = frames_feats_p[:, :best_zp, :]
+        effect = frames_feats_e[:, best_ze:, :]
+        p_transformed, e_embed = self.transformation_net(precondition, effect)
+
         return p_transformed, e_embed

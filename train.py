@@ -18,18 +18,20 @@ input_dim = (3, 224, 224)
 frame_feats_dim = 512
 model_dim = 512
 n_actions = 101
-batch_size = 30
+batch_size = 5
 n_frames = 25
 zp_limits = (int(math.ceil(1/3 * n_frames)), int(math.ceil(1/2 * n_frames - 1)))
 ze_limits = (int(math.floor(1/2 * n_frames + 1)), int(math.floor(2/3 * n_frames)))
 zp_possible = list(range(zp_limits[0], zp_limits[1] + 1))
 ze_possible = list(range(ze_limits[0], ze_limits[1] + 1))
+n_zp_possible = zp_limits[1] - zp_limits[0] + 1
+n_ze_possible = ze_limits[1] - ze_limits[0] + 1
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = torch.device('cpu')
 
 def train(epoch, log_path):
-    ucf101 = UCF101(root=config.data_dir, split='train')
+    ucf101 = UCF101(zp_limits[1], ze_limits[0], root=config.data_dir, split='train')
     train_set = DataLoader(
         ucf101, batch_size=batch_size, num_workers=4, shuffle=True)
     dataset = iter(train_set)
@@ -37,39 +39,27 @@ def train(epoch, log_path):
 
     train_log_path = os.path.join(log_path, 'train_log.txt')
     log_data = ''
-    for frames, action in pbar:
-        cur_batch_size = frames.shape[0]
-        frames, action = frames.to(device), action.to(device)
+    for frames_p, frames_e, action in pbar:
+        cur_batch_size = frames_p.shape[0]
+        frames_p, frames_e, action = frames_p.to(device),frames_e.to(device),action.to(device)
+        #frames_p = frames[:, :zp_limits[1]+1].contiguous()
+        #frames_e = frames[:, ze_limits[0]:].contiguous()
+        #del frames
+
+        optimizer.zero_grad()
+        frames_feats_p = frame_net_p(frames_p.view(-1, *input_dim)).view(cur_batch_size, zp_limits[1], frame_feats_dim)
+        frames_feats_e = frame_net_e(frames_e.view(-1, *input_dim)).view(cur_batch_size, n_frames - ze_limits[0], frame_feats_dim)
 
         # Search latent variables
         net.train(False)
         with torch.no_grad():
-            frames_feats = frame_net(frames.view(-1, *input_dim)).view(cur_batch_size, n_frames, frame_feats_dim)
-
-            # best_z = torch.empty((cur_batch_size, 2))
-            # min_distance = torch.full((cur_batch_size,), float('inf'))
-            # for zp in zp_possible:
-            #     for ze in ze_possible:
-            #         precondition = frames_feats[:, :zp+1]
-            #         effect = frames_feats[:, ze:]
-            #         transformed_embeds, effect_embed = net(precondition, effect, action)
-            #         # Obtain distance
-            #         loss = criterion(transformed_embeds[0], effect_embed, torch.ones((cur_batch_size,)))
-            #         # Get mask of instances where the new loss is better than the previous ones
-            #         better_mask = loss < min_distance
-            #         already_best_mask = 1 - better_mask
-            #         # Update best_z and min_distance according to that mask
-            #         best_z[:, 0] = best_z[:, 0] * already_best_mask + zp * better_mask
-            #         best_z[:, 1] = best_z[:, 1] * already_best_mask + ze * better_mask
-            #         min_distance = min_distance * already_best_mask + loss * better_mask
-
             best_zp = None
             best_ze = None
             min_distance = float('inf')
             for zp in zp_possible:
-                for ze in ze_possible:
-                    precondition = frames_feats[:, :zp+1, :]
-                    effect = frames_feats[:, ze:,:]
+                for ze in range(n_ze_possible):
+                    precondition = frames_feats_p[:, :zp, :]
+                    effect = frames_feats_e[:, ze:,:]
                     p_transformed, e_embed = net(precondition, effect, action)
                     # Obtain distance
                     is_positive = torch.ones((cur_batch_size,)).to(device)
@@ -79,10 +69,9 @@ def train(epoch, log_path):
                         best_zp, best_ze = zp, ze
                         min_distance = loss
 
-        net.zero_grad()
         net.train(True)
-        precondition = frames_feats[:, :zp+1, :]
-        effect = frames_feats[:, ze:, :]
+        precondition = frames_feats_p[:, :best_zp, :]
+        effect = frames_feats_e[:, best_ze:, :]
         p_transformed, e_embed = net(precondition, effect)
         y = -1 * torch.ones((cur_batch_size, p_transformed.shape[1]))
         y[:,action] = 1
@@ -123,7 +112,7 @@ def train(epoch, log_path):
         f.write(log_data)
 
 def valid(epoch, log_path):
-    ucf101 = UCF101(root=config.data_dir, split='val')
+    ucf101 = UCF101(zp_limits[1], ze_limits[0], root=config.data_dir, split='val')
     valid_set = DataLoader(
         ucf101, batch_size=batch_size, num_workers=4)
     dataset = iter(valid_set)
@@ -134,20 +123,23 @@ def valid(epoch, log_path):
     valid_log_path = os.path.join(log_path, 'val_log.txt')
     log_data = ''
     with torch.no_grad():
-        for frames, action in pbar:
-            cur_batch_size = frames.shape[0]
-            frames, action = frames.to(device), action.to(device)
+        for frames_p, frames_e, action in pbar:
+            cur_batch_size = frames_p.shape[0]
+            frames_p, frames_e, action = frames_p.to(device), frames_e.to(device), action.to(device)
+            #frames_p = frames[:, :zp_limits[1]+1].contiguous()
+            #frames_e = frames[:, ze_limits[0]:].contiguous()
 
             # Calculate optimal zp and ze values
-            frames_feats = frame_net(frames.view(-1, *input_dim)).view(cur_batch_size, n_frames, frame_feats_dim)
+            frames_feats_p = frame_net_p(frames_p.view(-1, *input_dim)).view(cur_batch_size, zp_limits[1], frame_feats_dim)
+            frames_feats_e = frame_net_e(frames_e.view(-1, *input_dim)).view(cur_batch_size, n_frames - ze_limits[0], frame_feats_dim)
 
             best_zp = None
             best_ze = None
             min_distance = float('inf')
             for zp in zp_possible:
-                for ze in ze_possible:
-                    precondition = frames_feats[:, :zp+1, :]
-                    effect = frames_feats[:, ze:,:]
+                for ze in range(n_ze_possible):
+                    precondition = frames_feats_p[:, :zp, :]
+                    effect = frames_feats_e[:, ze:,:]
                     p_transformed, e_embed = net(precondition, effect, action)
                     # Obtain distance
                     is_positive = torch.ones((cur_batch_size,)).to(device)
@@ -158,8 +150,8 @@ def valid(epoch, log_path):
                         min_distance = loss
 
             # Evaluate network
-            precondition = frames_feats[:, :zp+1, :]
-            effect = frames_feats[:, ze:, :]
+            precondition = frames_feats_p[:, :best_zp, :]
+            effect = frames_feats_e[:, best_ze:, :]
             p_transformed, e_embed = net(precondition, effect)
             y = -1 * torch.ones((cur_batch_size, p_transformed.shape[1]))
             y[:,action] = 1
@@ -213,11 +205,21 @@ if __name__ == '__main__':
     parser.add_argument('--n_epochs', required=False, default=20, help='the number of epochs to run')
     config = parser.parse_args()
 
-    frame_net = FrameFeats(frame_feats_dim).to(device)
-    net = ActTransNet(frame_feats_dim, model_dim, n_actions).to(device)
-
+    frame_net_p = FrameFeats(frame_feats_dim)
+    frame_net_e = FrameFeats(frame_feats_dim)
+    net = ActTransNet(frame_feats_dim, model_dim, n_actions)
+    
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        frame_net_p = nn.DataParallel(frame_net_p)
+        frame_net_e = nn.DataParallel(frame_net_e)
+        #net = nn.DataParallel(net)
+    frame_net_p = frame_net_p.to(device)
+    frame_net_e = frame_net_e.to(device)
+    net = net.to(torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'))
+    
     criterion = nn.CosineEmbeddingLoss(margin=.5)
-    optimizer = optim.Adam(net.parameters(), lr=1e-4)
+    optimizer = optim.Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
 
     if config.experiment is None:
         print('Starting new experiment...')

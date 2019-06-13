@@ -4,20 +4,23 @@ from torchvision import models
 import torch
 import numpy as np
 
-from models import rgb_resnet152
+#from models import rgb_resnet152
+from network import resnet101
 
 class FrameFeats(nn.Module):
     def __init__(self, out_dim):
         super().__init__()
-        self.pretrained_resnet = rgb_resnet152(pretrained=False, num_classes=101)
+        self.pretrained_resnet = resnet101(pretrained=False, channel=3)
+        # self.pretrained_resnet = rgb_resnet152(pretrained=False, num_classes=101)
         # self.pretrained_resnet = models.resnet152(pretrained=False, num_classes=101)
         # self.pretrained_resnet.fc_action = self.pretrained_resnet.fc
-        pretrained_params_ucf101 = torch.load('checkpoints/ucf101_s1_rgb_resnet152.pth.tar')
+        # pretrained_params_ucf101 = torch.load('checkpoints/ucf101_s1_rgb_resnet152.pth.tar')
+        pretrained_params_ucf101 = torch.load('ucf101_resnet101.pth.tar')
         self.pretrained_resnet.load_state_dict(pretrained_params_ucf101['state_dict'])
         # num_ftrs = self.pretrained_resnet.fc.in_features
         # self.pretrained_resnet.fc = nn.Linear(num_ftrs, out_dim)
-        num_ftrs = self.pretrained_resnet.fc_action.in_features
-        self.pretrained_resnet.fc_action = nn.Linear(num_ftrs, out_dim)
+        num_ftrs = self.pretrained_resnet.fc_custom.in_features
+        self.pretrained_resnet.fc_custom = nn.Linear(num_ftrs, out_dim)
         #self.resnet_wo_last = nn.Sequential(*list(pretrained_resnet.children())[:-1])
         #self.fc = nn.Linear(pretrained_resnet.fc.in_features, out_dim)
 

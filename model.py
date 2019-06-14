@@ -21,7 +21,7 @@ class FrameFeats(nn.Module):
         # self.pretrained_resnet = models.resnet152(pretrained=False, num_classes=101)
         # self.pretrained_resnet.fc_action = self.pretrained_resnet.fc
         # pretrained_params_ucf101 = torch.load('checkpoints/ucf101_s1_rgb_resnet152.pth.tar')
-        pretrained_params_ucf101 = torch.load('ucf101_resnet101.pth.tar')
+        pretrained_params_ucf101 = torch.load('ucf101_resnet101.pth.tar', map_location=device)
         self.pretrained_resnet.load_state_dict(pretrained_params_ucf101['state_dict'])
         # num_ftrs = self.pretrained_resnet.fc.in_features
         # self.pretrained_resnet.fc = nn.Linear(num_ftrs, out_dim)
@@ -110,9 +110,11 @@ class ActTransNet(nn.Module):
         self.frame_net_e.train(False)
         self.transformation_net.train(False)
         with torch.no_grad():
-            best_zp = None
-            best_ze = None
-            min_distance = float('inf')
+            best_zp = torch.empty((batch_size,))
+            best_ze = torch.empty((batch_size,))
+            frames_p_mask = torch.ones((batch_size, n_frames))
+            frames_e_mask = torch.ones((batch_size, n_frames))
+            min_distance = torch.full((batch_size,), torch.finfo(torch.float).max)
             for zp in self.zp_possible:
                 for ze in range(self.n_ze_possible):
                     precondition = frames_feats_p[:, :zp, :]
@@ -121,15 +123,23 @@ class ActTransNet(nn.Module):
                     # Obtain distance
                     is_positive = torch.ones((batch_size,)).to(device)
                     loss = self.criterion(p_transformed, e_embed, is_positive)
-                    # If it is better than the last one, update best zp and ze
-                    if loss < min_distance:
-                        best_zp, best_ze = zp, ze
-                        min_distance = loss
+                    # Update min_distance, and best zp and ze
+                    better_mask = (loss < min_distance).float()
+                    zp_mask = torch.zeros((n_frames,))
+                    zp_mask[:zp] = 1
+                    better_mask_zp = better_mask.unsqueeze(1).expand((batch_size, n_frames))
+                    ze_mask = torch.zeros((n_frames,))
+                    ze_mask[ze:] = 1
+                    better_mask_ze = better_mask.unsqueeze(1).expand((batch_size, n_frames))
+                    frames_p_mask = frames_p_mask * (1 - better_mask_zp) + zp_mask * better_mask_zp
+                    frames_e_mask = frames_e_mask * (1 - better_mask_ze) + ze_mask * better_mask_ze
+                    min_distance = min_distance * (1 - better_mask) + loss * better_mask
 
         self.frame_net_p.train(self.training)
         self.frame_net_e.train(self.training)
         self.transformation_net.train(self.training)
-        precondition = frames_feats_p[:, :best_zp, :]
-        effect = frames_feats_e[:, best_ze:, :]
+        precondition = frames_feats_p * frames_p_mask.unsqueeze(2).expand((batch_size, n_frames, self.frame_feats_dim))
+        effect = frames_feats_e * frames_e_mask.unsqueeze(2).expand((batch_size, n_frames, self.frame_feats_dim))
         p_transformed, e_embed = self.transformation_net(precondition, effect)
+
         return p_transformed, e_embed

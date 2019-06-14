@@ -66,16 +66,12 @@ def train(epoch, log_path):
             optimizer.step()
             optimizer.zero_grad()
 
-        sim = F.cosine_similarity(p_transformed, e_embed, dim=2)
-        # print('sim:', sim)
-        prediction = sim.argmax(dim=1).to(device)
-        # print('prediction:', prediction)
-        # print('action:', action)
-        accuracy = ((prediction == action).sum() / action.shape[0]).item()
-        # print('Accuracy:', accuracy)
+        # sim = F.cosine_similarity(p_transformed, e_embed, dim=2)
+        # prediction = sim.argmax(dim=1).to(device)
+        # accuracy = ((prediction == action).sum() / action.shape[0]).item()
 
         loss_list.append(loss.item())
-        acc_list.append(accuracy)
+        # acc_list.append(accuracy)
         pbar.set_description(
             'Epoch: {}; Loss: {:.5f}; Acc: {:.5f}'.format(
                 epoch + 1, np.mean(loss_list), np.mean(acc_list)

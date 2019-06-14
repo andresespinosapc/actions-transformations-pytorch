@@ -157,7 +157,7 @@ if __name__ == '__main__':
     parser.add_argument('data_dir', help='the path to the frames')
     parser.add_argument('output_dir', help='the path to store the outputs')
     parser.add_argument('--experiment', required=False, help='the number of experiment')
-    parser.add_argument('--n_epochs', required=False, default=20, help='the number of epochs to run')
+    parser.add_argument('--n_epochs', required=False, default=162, help='the number of epochs to run')
     config = parser.parse_args()
 
     criterion = nn.CosineEmbeddingLoss(margin=.5)
@@ -197,7 +197,7 @@ if __name__ == '__main__':
         os.makedirs(checkpoint_path)
     # Obtain current epoch from checkpoint file names
     cur_epoch = int(max(map(
-        lambda file_name: int(file_name.split('_')[1]),
+        lambda file_name: int(file_name.split('_')[1]) - 1,
         filter(
             lambda x: not x.startswith('.'),
             os.listdir(checkpoint_path))
@@ -205,21 +205,22 @@ if __name__ == '__main__':
         default=-1
     )) + 1
     if cur_epoch != 0:
+        print('Loading checkpoint {}...'.format(str(cur_epoch).zfill(2)))
         file_name = next(filter(
-            lambda x: 'checkpoint_{}'.format(str(cur_epoch - 1).zfill(2)) in x,
+            lambda x: 'checkpoint_{}'.format(str(cur_epoch).zfill(2)) in x,
             os.listdir(checkpoint_path)
         ))
         net.load_state_dict(torch.load(
             os.path.join(checkpoint_path, file_name)
         ))
     # Run epochs
-    for epoch in range(cur_epoch, cur_epoch + config.n_epochs):
+    for epoch in range(cur_epoch, config.n_epochs):
         train(epoch, log_path)
         valid(epoch, log_path)
 
         with open(
             os.path.join(checkpoint_path, 'checkpoint_{}_{}.model').format(
-                str(epoch + 1).zfill(2),
+                str(epoch).zfill(2),
                 datetime.today().replace(microsecond=0)
             ), 'wb'
         ) as f:

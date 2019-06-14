@@ -51,8 +51,8 @@ class TransformationNet(nn.Module):
 
     def forward(self, precondition, effect, action=None):
         batch_size = precondition.shape[0]
-        p_avg = precondition.mean(1)
-        e_avg = effect.mean(1)
+        p_avg = precondition.sum(1).float() / (precondition != 0).sum(1).float()
+        e_avg = effect.sum(1).float() / (effect != 0).sum(1).float()
 
         p_embed = self.precondition_proj(p_avg)
         e_embed = self.effect_proj(e_avg)
@@ -110,11 +110,11 @@ class ActTransNet(nn.Module):
         self.frame_net_e.train(False)
         self.transformation_net.train(False)
         with torch.no_grad():
-            best_zp = torch.empty((batch_size,))
-            best_ze = torch.empty((batch_size,))
-            frames_p_mask = torch.ones((batch_size, n_frames))
-            frames_e_mask = torch.ones((batch_size, n_frames))
-            min_distance = torch.full((batch_size,), torch.finfo(torch.float).max)
+            best_zp = torch.empty((batch_size,)).to(device)
+            best_ze = torch.empty((batch_size,)).to(device)
+            frames_p_mask = torch.ones((batch_size, n_frames)).to(device)
+            frames_e_mask = torch.ones((batch_size, n_frames)).to(device)
+            min_distance = torch.full((batch_size,), torch.finfo(torch.float).max).to(device)
             for zp in self.zp_possible:
                 for ze in range(self.n_ze_possible):
                     precondition = frames_feats_p[:, :zp, :]
@@ -125,10 +125,10 @@ class ActTransNet(nn.Module):
                     loss = self.criterion(p_transformed, e_embed, is_positive)
                     # Update min_distance, and best zp and ze
                     better_mask = (loss < min_distance).float()
-                    zp_mask = torch.zeros((n_frames,))
+                    zp_mask = torch.zeros((n_frames,)).to(device)
                     zp_mask[:zp] = 1
                     better_mask_zp = better_mask.unsqueeze(1).expand((batch_size, n_frames))
-                    ze_mask = torch.zeros((n_frames,))
+                    ze_mask = torch.zeros((n_frames,)).to(device)
                     ze_mask[ze:] = 1
                     better_mask_ze = better_mask.unsqueeze(1).expand((batch_size, n_frames))
                     frames_p_mask = frames_p_mask * (1 - better_mask_zp) + zp_mask * better_mask_zp

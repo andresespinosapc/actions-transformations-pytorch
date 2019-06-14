@@ -79,9 +79,10 @@ def train(epoch, log_path):
         )
 
         train_log_path = os.path.join(log_path, 'train_log.txt')
-        log_data += '{} - Epoch: {}; Loss: {:.5f}; Acc: {:.5f}\n'.format(
+        log_data += '{} - Epoch: {}; Loss: {:.5f};\n'.format(
             datetime.today().replace(microsecond=0),
-            epoch + 1, loss.item(), accuracy
+            epoch + 1, loss.item(),
+            # accuracy,
         )
         sys.stdout.flush()
 

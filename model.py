@@ -11,6 +11,7 @@ from network import resnet101
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cpu')
 
 class FrameFeats(nn.Module):
     def __init__(self, out_dim):
@@ -61,15 +62,15 @@ class TransformationNet(nn.Module):
         if action is not None:
             selected_transformations = self.W_tranformations.index_select(0, action)
             #p_transformed = torch.bmm(selected_transformations, p_embed.unsqueeze(2)).unsqueeze(1)
-            p_transformed = np.squeeze(torch.bmm(selected_transformations, p_embed.unsqueeze(2)))
+            p_transformed = torch.bmm(selected_transformations, p_embed.unsqueeze(2)).squeeze(dim=2)
         else:
             # No he revisado esta parte 
             p_transformed = torch.empty((batch_size, self.n_actions, self.dim)).to(device)
             # e_embed_copy = torch.empty((batch_size, self.n_actions, self.dim)).to(device)
             for i in range(self.n_actions):
-                p_transformed[:, i, :] = np.squeeze(torch.bmm(
+                p_transformed[:, i, :] = torch.bmm(
                     self.W_tranformations[i].expand(batch_size, self.dim, self.dim), 
-                    p_embed.unsqueeze(2)))
+                    p_embed.unsqueeze(2)).squeeze()
                 # e_embed_copy[:, i, :] = e_embed
             # e_embed = e_embed_copy
             e_embed = e_embed.unsqueeze(1).expand(batch_size, self.n_actions, self.dim).contiguous()

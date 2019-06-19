@@ -6,8 +6,9 @@ import numpy as np
 
 import time
 
+from efficientnet_pytorch import EfficientNet
 #from models import rgb_resnet152
-from network import resnet101
+# from network import resnet101
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -16,23 +17,36 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class FrameFeats(nn.Module):
     def __init__(self, out_dim):
         super().__init__()
-        self.pretrained_resnet = resnet101(pretrained=False, channel=3)
-        # self.pretrained_resnet = rgb_resnet152(pretrained=False, num_classes=101)
-        # self.pretrained_resnet = models.resnet152(pretrained=False, num_classes=101)
-        # self.pretrained_resnet.fc_action = self.pretrained_resnet.fc
+        
+        # self.pretrained_backbone = rgb_resnet152(pretrained=False, num_classes=101)
+        # self.pretrained_backbone = models.resnet152(pretrained=False, num_classes=101)
+        # self.pretrained_backbone.fc_action = self.pretrained_backbone.fc
         # pretrained_params_ucf101 = torch.load('checkpoints/ucf101_s1_rgb_resnet152.pth.tar')
-        pretrained_params_ucf101 = torch.load('ucf101_resnet101.pth.tar', map_location=device)
-        self.pretrained_resnet.load_state_dict(pretrained_params_ucf101['state_dict'])
-        # num_ftrs = self.pretrained_resnet.fc.in_features
-        # self.pretrained_resnet.fc = nn.Linear(num_ftrs, out_dim)
-        num_ftrs = self.pretrained_resnet.fc_custom.in_features
-        self.pretrained_resnet.fc_custom = nn.Linear(num_ftrs, out_dim)
-        #self.resnet_wo_last = nn.Sequential(*list(pretrained_resnet.children())[:-1])
-        #self.fc = nn.Linear(pretrained_resnet.fc.in_features, out_dim)
+        
+        # self.pretrained_backbone = resnet101(pretrained=False, channel=3)
+        # pretrained_params_ucf101 = torch.load('ucf101_resnet101.pth.tar', map_location=device)
+        # num_ftrs = self.pretrained_backbone.fc_custom.in_features
+        # self.pretrained_backbone.fc_custom = nn.Linear(num_ftrs, out_dim)
+
+        self.pretrained_backbone = EfficientNet.from_name('efficientnet-b0')
+        self.pretrained_backbone._fc = nn.Linear(self.pretrained_backbone._bn1.num_features, 101)
+        pretrained_params_ucf101 = torch.load(
+            'ucf101_efficientnetb0.pth.tar',
+            map_location=device,
+        )
+        self.pretrained_backbone.load_state_dict(pretrained_params_ucf101['state_dict'])
+        num_ftrs = self.pretrained_backbone._fc.in_features
+        self.pretrained_backbone._fc = nn.Linear(num_ftrs, out_dim)
+
+        # print('efficientnetb0 params:', sum([np.prod(p.size()) for p in filter(lambda p: p.requires_grad, self.pretrained_backbone.parameters())]))
+        # print('resnet101 params:', sum([np.prod(p.size()) for p in filter(lambda p: p.requires_grad, resnet101(pretrained=False, channel=3).parameters())]))
+        
+        #self.resnet_wo_last = nn.Sequential(*list(pretrained_backbone.children())[:-1])
+        #self.fc = nn.Linear(pretrained_backbone.fc.in_features, out_dim)
 
     def forward(self, frame):
         #return self.fc(self.resnet_wo_last(frame))
-        return self.pretrained_resnet(frame)
+        return self.pretrained_backbone(frame)
 
 class TransformationNet(nn.Module):
     def __init__(self, input_dim, dim, n_actions):

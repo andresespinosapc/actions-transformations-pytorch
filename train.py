@@ -14,10 +14,11 @@ from model import ActTransNet, FrameFeats
 from dataset import UCF101
 import time
 
+
 frame_feats_dim = 512
 model_dim = 512
 n_actions = 101
-batch_size = 4
+batch_size = 2
 batch_size_to_step = 50
 iter_to_step = int(batch_size_to_step / batch_size)
 n_frames = 25
@@ -30,6 +31,7 @@ n_ze_possible = ze_limits[1] - ze_limits[0] + 1
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = torch.device('cpu')
+
 
 def train(epoch, log_path):
     ucf101 = UCF101(zp_limits[1], ze_limits[0], root=config.data_dir, split='train')

@@ -52,7 +52,7 @@ def train(epoch, log_path):
     
         p_transformed, e_embed = net(frames_p, frames_e, action)
         y = -1 * torch.ones((cur_batch_size, p_transformed.shape[1]))
-        y[:,action] = 1
+        y[list(range(cur_batch_size)), action] = 1
         y = y.to(device)
         p_transformed_shape = p_transformed.shape
         output_loss_dim = p_transformed_shape[0] * p_transformed_shape[1]

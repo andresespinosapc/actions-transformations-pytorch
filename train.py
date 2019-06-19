@@ -18,7 +18,7 @@ import time
 frame_feats_dim = 512
 model_dim = 512
 n_actions = 101
-batch_size = 3
+batch_size = 6
 batch_size_to_step = 50
 iter_to_step = int(batch_size_to_step / batch_size)
 n_frames = 25
@@ -68,12 +68,12 @@ def train(epoch, log_path):
             optimizer.step()
             optimizer.zero_grad()
 
-        # sim = F.cosine_similarity(p_transformed, e_embed, dim=2)
-        # prediction = sim.argmax(dim=1).to(device)
-        # accuracy = ((prediction == action).sum() / action.shape[0]).item()
+        sim = F.cosine_similarity(p_transformed, e_embed, dim=2)
+        prediction = sim.argmax(dim=1).to(device)
+        accuracy = ((prediction == action).sum() / action.shape[0]).item()
 
         loss_list.append(loss.item())
-        # acc_list.append(accuracy)
+        acc_list.append(accuracy)
         pbar.set_description(
             'Epoch: {}; Loss: {:.5f}; Acc: {:.5f}'.format(
                 epoch + 1, np.mean(loss_list), np.mean(acc_list)
@@ -84,7 +84,7 @@ def train(epoch, log_path):
         log_data += '{} - Epoch: {}; Loss: {:.5f};\n'.format(
             datetime.today().replace(microsecond=0),
             epoch + 1, loss.item(),
-            # accuracy,
+            accuracy,
         )
         sys.stdout.flush()
 
@@ -110,7 +110,7 @@ def valid(epoch, log_path):
             
             p_transformed, e_embed = net(frames_p, frames_e, action)
             y = -1 * torch.ones((cur_batch_size, p_transformed.shape[1]))
-            y[:,action] = 1
+            y[list(range(cur_batch_size)), action] = 1
             y = y.to(device)
             p_transformed_shape = p_transformed.shape
             output_loss_dim = p_transformed_shape[0] * p_transformed_shape[1]

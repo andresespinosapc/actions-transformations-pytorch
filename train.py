@@ -34,7 +34,11 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def train(epoch, log_path):
-    ucf101 = UCF101(zp_limits[1], ze_limits[0], root=config.data_dir, split='train')
+    ucf101 = UCF101(
+        zp_limits[1], ze_limits[0],
+        root=config.data_dir,
+        split_file_path=config.train_split_path,
+        n_frames=n_frames)
     train_set = DataLoader(
         ucf101, batch_size=batch_size, num_workers=4, shuffle=True)
     dataset = iter(train_set)
@@ -92,7 +96,11 @@ def train(epoch, log_path):
         f.write(log_data)
 
 def valid(epoch, log_path):
-    ucf101 = UCF101(zp_limits[1], ze_limits[0], root=config.data_dir, split='val')
+    ucf101 = UCF101(
+        zp_limits[1], ze_limits[0],
+        root=config.data_dir,
+        split_file_path=config.val_split_path,
+        n_frames=n_frames)
     valid_set = DataLoader(
         ucf101, batch_size=batch_size, num_workers=4)
     dataset = iter(valid_set)
@@ -158,6 +166,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Actions Transformations')
     parser.add_argument('data_dir', help='the path to the frames')
     parser.add_argument('output_dir', help='the path to store the outputs')
+    parser.add_argument('--train_split_path', default='./train_rgb_split1.txt', help='the path to the train split file')
+    parser.add_argument('--val_split_path', default='./val_rgb_split1.txt', help='the path to the validation split file')
     parser.add_argument('--experiment', required=False, help='the number of experiment')
     parser.add_argument('--n_epochs', required=False, default=162, help='the number of epochs to run')
     config = parser.parse_args()

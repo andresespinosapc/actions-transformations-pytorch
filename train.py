@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from datetime import datetime
 import numpy as np
-
+from torch.optim import lr_scheduler
 from model import ActTransNet, FrameFeats
 from dataset import UCF101
 import time
@@ -22,6 +22,8 @@ batch_size = 6
 batch_size_to_step = 50
 iter_to_step = int(batch_size_to_step / batch_size)
 n_frames = 25
+LR_DECAY = 0.1
+DECAY_PATIENCE = 5
 zp_limits = (int(math.ceil(1/3 * n_frames)), int(math.ceil(1/2 * n_frames - 1)))
 ze_limits = (int(math.floor(1/2 * n_frames + 1)), int(math.floor(2/3 * n_frames)))
 zp_possible = list(range(zp_limits[0], zp_limits[1] + 1))
@@ -49,7 +51,6 @@ def train(epoch, log_path):
     for i, (frames_p, frames_e, action) in enumerate(pbar):
         cur_batch_size = frames_p.shape[0]
         frames_p, frames_e, action = frames_p.to(device),frames_e.to(device),action.to(device)
-    
         p_transformed, e_embed = net(frames_p, frames_e, action)
         y = -1 * torch.ones((cur_batch_size, p_transformed.shape[1]))
         y[list(range(cur_batch_size)), action] = 1
@@ -145,7 +146,7 @@ def valid(epoch, log_path):
                 datetime.today().replace(microsecond=0),
                 epoch + 1, loss.item(), accuracy
             )
-    
+    scheduler.step(np.mean(loss_list))
     with open(valid_log_path, 'a+') as f:
         f.write(log_data)
     print('Avg acc: {:.5f}'.format(np.mean(acc_list)))
@@ -176,6 +177,7 @@ if __name__ == '__main__':
         lr=1e-4,
         # weight_decay=1e-4,
     )
+    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, factor=LR_DECAY, patience=DECAY_PATIENCE,verbose=True)
 
     if config.experiment is None:
         print('Starting new experiment...')
@@ -198,6 +200,7 @@ if __name__ == '__main__':
         os.makedirs(log_path)
         os.makedirs(checkpoint_path)
     # Obtain current epoch from checkpoint file names
+    print("Checkpoints available: ", os.listdir(checkpoint_path))
     cur_epoch = int(max(map(
         lambda file_name: int(file_name.split('_')[1]) - 1,
         filter(
@@ -212,9 +215,16 @@ if __name__ == '__main__':
             lambda x: 'checkpoint_{}'.format(str(cur_epoch).zfill(2)) in x,
             os.listdir(checkpoint_path)
         ))
-        net.load_state_dict(torch.load(
-            os.path.join(checkpoint_path, file_name)
-        ))
+        print(os.path.join(checkpoint_path, file_name))
+        cur_epoch+=1
+        last_checkpoint = torch.load(os.path.join(checkpoint_path, file_name)) 
+        net.load_state_dict(last_checkpoint['model_state_dict'])
+        scheduler.load_state_dict(last_checkpoint['scheduler'])
+        optimizer.load_state_dict(last_checkpoint['optimizer_state_dict'])
+        for state in optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.cuda()
     # Run epochs
     for epoch in range(cur_epoch, config.n_epochs):
         train(epoch, log_path)
@@ -226,4 +236,8 @@ if __name__ == '__main__':
                 datetime.today().replace(microsecond=0)
             ), 'wb'
         ) as f:
-            torch.save(net.state_dict(), f)
+            torch.save({
+                'model_state_dict': net.state_dict(),
+                'scheduler': scheduler.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict()
+                }, f)

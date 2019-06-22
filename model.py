@@ -78,21 +78,28 @@ class TransformationNet(nn.Module):
             #p_transformed = torch.bmm(selected_transformations, p_embed.unsqueeze(2)).unsqueeze(1)
             p_transformed = torch.bmm(selected_transformations, p_embed.unsqueeze(2)).squeeze(dim=2)
         else:
-            # No he revisado esta parte 
-            p_transformed = torch.empty((batch_size, self.n_actions, self.dim)).to(device)
+
+            W_tranformations_uns = torch.unsqueeze(self.W_tranformations, dim = 1).expand(self.n_actions, batch_size, self.dim, self.dim)
+            p_transformed = torch.squeeze(torch.matmul(W_tranformations_uns, torch.unsqueeze(p_embed, dim = 2)), dim = 3).permute(1,0,2)
+            
+            #p_transformed_for = torch.empty((batch_size, self.n_actions, self.dim)).to(device)
             # e_embed_copy = torch.empty((batch_size, self.n_actions, self.dim)).to(device)
-            for i in range(self.n_actions):
-                p_transformed[:, i, :] = torch.bmm(
-                    self.W_tranformations[i].expand(batch_size, self.dim, self.dim), 
-                    p_embed.unsqueeze(2)).squeeze()
+            #for i in range(self.n_actions):
+            #    p_transformed_for[:, i, :] = torch.bmm(
+            #        self.W_tranformations[i].expand(batch_size, self.dim, self.dim), 
+            #        p_embed.unsqueeze(2)).squeeze()
                 # e_embed_copy[:, i, :] = e_embed
             # e_embed = e_embed_copy
-            e_embed = e_embed.unsqueeze(1).expand(batch_size, self.n_actions, self.dim).contiguous()
 
+            #size:  torch.Size([2, 101, 512])
+            #e_embed:  torch.Size([2, 512])
+            e_embed = e_embed.unsqueeze(1).expand(batch_size, self.n_actions, self.dim).contiguous()
+        #[101, 2, 512]
+        #[1, 2, 512]
         # results = []
         # for action_idx in actions_idx:
         #     results.append(self.T_list[action_idx](p_embed))
-        return p_transformed, e_embed
+        return p_transformed.contiguous(), e_embed
 
 class ActTransNet(nn.Module):
     def __init__(self, frame_feats_dim, model_dim, n_actions, zp_limits, ze_limits, criterion):

@@ -23,8 +23,11 @@ class UCF101(Dataset):
         for line in open(split_file_path):
             file_name, duration_str, target_str = line.split(' ')
             duration, target = int(duration_str), int(target_str)
+            # TEMP
+            if 'HandStand' in file_name:
+                file_name = file_name.replace('HandStand', 'Handstand')
             frames_path = os.path.join(self.root, file_name)
-            diff = duration / (n_frames - 1)
+            diff = (duration - 1) / (n_frames - 1)
             frames_ids = (np.arange(n_frames) * diff + 1).astype(np.int)
             new_data = [frames_path, frames_ids, target]
             data.append(new_data)

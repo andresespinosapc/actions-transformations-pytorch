@@ -18,7 +18,7 @@ import time
 frame_feats_dim = 512
 model_dim = 512
 n_actions = 101
-batch_size = 4
+batch_size = 8
 batch_size_to_step = 50
 iter_to_step = int(batch_size_to_step / batch_size)
 n_frames = 25
@@ -169,12 +169,30 @@ if __name__ == '__main__':
     parser.add_argument('--train_split_path', default='./train_rgb_split1.txt', help='the path to the train split file')
     parser.add_argument('--val_split_path', default='./val_rgb_split1.txt', help='the path to the validation split file')
     parser.add_argument('--experiment', required=False, help='the number of experiment')
-    parser.add_argument('--n_epochs', required=False, default=162, help='the number of epochs to run')
+    parser.add_argument('--n_epochs', required=False, default=162, type=int, help='the number of epochs to run')
+    parser.add_argument('--instance_norm', action='store_true')
+    parser.add_argument('--embed_dropout', default=.5, type=float)
+    parser.add_argument('--trans_dropout', default=0, type=float)
     config = parser.parse_args()
+
+    print('instance_norm:', config.instance_norm)
+    print('embed_dropout:', config.embed_dropout)
+    print('trans_dropout:', config.trans_dropout)
+    sys.stdout.flush()
 
     criterion = nn.CosineEmbeddingLoss(margin=.5)
     
-    net = ActTransNet(frame_feats_dim, model_dim, n_actions, zp_limits, ze_limits, nn.CosineEmbeddingLoss(margin=.5, reduction='none'))
+    net = ActTransNet(
+        frame_feats_dim,
+        model_dim,
+        n_actions,
+        zp_limits,
+        ze_limits,
+        nn.CosineEmbeddingLoss(margin=.5, reduction='none'),
+        instance_norm=config.instance_norm,
+        embed_dropout=config.embed_dropout,
+        trans_dropout=config.trans_dropout,
+    )
     
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")

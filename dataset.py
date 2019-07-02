@@ -73,13 +73,10 @@ class UCF101(Dataset):
 
     def __getitem__(self, index):
         frames_path, frames_ids, target = self.data[index]
-        print("frames_path: ", frames_path)
-        print("frames_ids: ", frames_ids)
         frames_zp = []
         frames_ze = []
         for i in range(len(frames_ids)):
             frame_path = os.path.join(frames_path, 'frame{}.jpg'.format(str(frames_ids[i]).zfill(6)))
-            print("frames_path", frame_path)
             sys.stdout.flush()
             if i < self.zp_limit: 
                 img = self.get_transformed_frame(frame_path)

@@ -8,7 +8,7 @@ import numpy as np
 import time
 
 from efficientnet_pytorch import EfficientNet
-#from models import rgb_resnet152
+from models import rgb_resnet50
 from network import resnet101
 
 
@@ -16,7 +16,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = torch.device('cpu')
 
 class FrameFeats(nn.Module):
-    def __init__(self, out_dim, backbone='efficientnetb0'):
+    def __init__(self, out_dim, backbone='resnet50'):
         super().__init__()
         
         # self.pretrained_backbone = rgb_resnet152(pretrained=False, num_classes=101)
@@ -37,9 +37,18 @@ class FrameFeats(nn.Module):
         elif backbone == 'resnet101':
             self.pretrained_backbone = resnet101(pretrained=False, channel=3)
             pretrained_params_ucf101 = torch.load('ucf101_resnet101.pth.tar', map_location=device)
+            self.pretrained_backbone.load_state_dict(pretrained_params_ucf101['state_dict'])
             num_ftrs = self.pretrained_backbone.fc_custom.in_features
             self.pretrained_backbone.fc_custom = nn.Linear(num_ftrs, out_dim)
-
+        elif backbone == 'resnet50':
+            self.pretrained_backbone = rgb_resnet50(pretrained=False, num_classes=101)
+            pretrained_params_ucf101 = torch.load('ucf101_resnet50.pth.tar')
+            self.pretrained_backbone.load_state_dict(pretrained_params_ucf101['state_dict'])
+            num_ftrs = self.pretrained_backbone.fc_action.in_features
+            self.pretrained_backbone.fc_action = nn.Linear(num_ftrs, out_dim)
+            # self.pretrained_backbone = models.resnet50(pretrained=False, num_classes=101)
+            # self.pretrained_backbone.fc_action = self.pretrained_backbone.fc
+            
         # print('efficientnetb0 params:', sum([np.prod(p.size()) for p in filter(lambda p: p.requires_grad, self.pretrained_backbone.parameters())]))
         # print('resnet101 params:', sum([np.prod(p.size()) for p in filter(lambda p: p.requires_grad, resnet101(pretrained=False, channel=3).parameters())]))
         
@@ -111,7 +120,7 @@ class TransformationNet(nn.Module):
         return p_transformed, e_embed
 
 class ActTransNet(nn.Module):
-    def __init__(self, frame_feats_dim, model_dim, n_actions, zp_limits, ze_limits, criterion):
+    def __init__(self, frame_feats_dim, model_dim, n_actions, zp_limits, ze_limits, criterion, **kwargs):
         super().__init__()
         self.frame_feats_dim = frame_feats_dim
         self.criterion = criterion
@@ -126,7 +135,7 @@ class ActTransNet(nn.Module):
         self.input_dim = (3, 224, 224)
         self.frame_net_p = FrameFeats(frame_feats_dim)
         self.frame_net_e = FrameFeats(frame_feats_dim)
-        self.transformation_net = TransformationNet(frame_feats_dim, model_dim, n_actions)
+        self.transformation_net = TransformationNet(frame_feats_dim, model_dim, n_actions, **kwargs)
 
     def forward(self, frames_p, frames_e, action):
         batch_size = frames_p.shape[0]

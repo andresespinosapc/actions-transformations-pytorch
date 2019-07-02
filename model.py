@@ -1,5 +1,6 @@
 import math
 from torch import nn
+import torch.nn.functional as F
 from torchvision import models
 import torch
 import numpy as np
@@ -8,35 +9,36 @@ import time
 
 from efficientnet_pytorch import EfficientNet
 #from models import rgb_resnet152
-# from network import resnet101
+from network import resnet101
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = torch.device('cpu')
 
 class FrameFeats(nn.Module):
-    def __init__(self, out_dim):
+    def __init__(self, out_dim, backbone='efficientnetb0'):
         super().__init__()
         
         # self.pretrained_backbone = rgb_resnet152(pretrained=False, num_classes=101)
         # self.pretrained_backbone = models.resnet152(pretrained=False, num_classes=101)
         # self.pretrained_backbone.fc_action = self.pretrained_backbone.fc
         # pretrained_params_ucf101 = torch.load('checkpoints/ucf101_s1_rgb_resnet152.pth.tar')
-        
-        # self.pretrained_backbone = resnet101(pretrained=False, channel=3)
-        # pretrained_params_ucf101 = torch.load('ucf101_resnet101.pth.tar', map_location=device)
-        # num_ftrs = self.pretrained_backbone.fc_custom.in_features
-        # self.pretrained_backbone.fc_custom = nn.Linear(num_ftrs, out_dim)
 
-        self.pretrained_backbone = EfficientNet.from_name('efficientnet-b0')
-        self.pretrained_backbone._fc = nn.Linear(self.pretrained_backbone._bn1.num_features, 101)
-        pretrained_params_ucf101 = torch.load(
-            'ucf101_efficientnetb0.pth.tar',
-            map_location=device,
-        )
-        self.pretrained_backbone.load_state_dict(pretrained_params_ucf101['state_dict'])
-        num_ftrs = self.pretrained_backbone._fc.in_features
-        self.pretrained_backbone._fc = nn.Linear(num_ftrs, out_dim)
+        if backbone == 'efficientnetb0':
+            self.pretrained_backbone = EfficientNet.from_name('efficientnet-b0')
+            self.pretrained_backbone._fc = nn.Linear(self.pretrained_backbone._bn1.num_features, 101)
+            pretrained_params_ucf101 = torch.load(
+                'ucf101_efficientnetb0.pth.tar',
+                map_location=device,
+            )
+            self.pretrained_backbone.load_state_dict(pretrained_params_ucf101['state_dict'])
+            num_ftrs = self.pretrained_backbone._fc.in_features
+            self.pretrained_backbone._fc = nn.Linear(num_ftrs, out_dim)
+        elif backbone == 'resnet101':
+            self.pretrained_backbone = resnet101(pretrained=False, channel=3)
+            pretrained_params_ucf101 = torch.load('ucf101_resnet101.pth.tar', map_location=device)
+            num_ftrs = self.pretrained_backbone.fc_custom.in_features
+            self.pretrained_backbone.fc_custom = nn.Linear(num_ftrs, out_dim)
 
         # print('efficientnetb0 params:', sum([np.prod(p.size()) for p in filter(lambda p: p.requires_grad, self.pretrained_backbone.parameters())]))
         # print('resnet101 params:', sum([np.prod(p.size()) for p in filter(lambda p: p.requires_grad, resnet101(pretrained=False, channel=3).parameters())]))
@@ -49,7 +51,7 @@ class FrameFeats(nn.Module):
         return self.pretrained_backbone(frame)
 
 class TransformationNet(nn.Module):
-    def __init__(self, input_dim, dim, n_actions):
+    def __init__(self, input_dim, dim, n_actions, instance_norm=True, embed_dropout=.5, trans_dropout=0):
         super().__init__()
         self.dim = dim
         self.n_actions = n_actions
@@ -62,14 +64,26 @@ class TransformationNet(nn.Module):
         self.W_tranformations = nn.Parameter(torch.Tensor(n_actions, dim, dim))
         nn.init.kaiming_uniform_(self.W_tranformations, a=math.sqrt(5))
         self.default_action = torch.Tensor(list(range(self.n_actions)))
+        if instance_norm:
+            # self.instance_norm = nn.InstanceNorm1d(self.dim, affine=True)
+            self.instance_norm = nn.GroupNorm(1, 1)
+        else:
+            self.instance_norm = nn.Identity()
+        self.embed_dropout = nn.Dropout(p=embed_dropout, inplace=True)
+        self.trans_dropout = nn.Dropout(p=trans_dropout, inplace=True)
 
     def forward(self, precondition, effect, action=None):
         batch_size = precondition.shape[0]
         p_avg = precondition.sum(1).float() / (precondition != 0).sum(1).float()
         e_avg = effect.sum(1).float() / (effect != 0).sum(1).float()
 
+        p_avg = self.instance_norm(p_avg.unsqueeze(1)).squeeze(1)
+        e_avg = self.instance_norm(e_avg.unsqueeze(1)).squeeze(1)
+
         p_embed = self.precondition_proj(p_avg)
+        p_embed = self.embed_dropout(p_embed)
         e_embed = self.effect_proj(e_avg)
+        e_embed = self.embed_dropout(e_embed)
 
         # if action is None:
         #     action = self.default_action
@@ -88,6 +102,8 @@ class TransformationNet(nn.Module):
                 # e_embed_copy[:, i, :] = e_embed
             # e_embed = e_embed_copy
             e_embed = e_embed.unsqueeze(1).expand(batch_size, self.n_actions, self.dim).contiguous()
+
+        p_transformed = self.trans_dropout(p_transformed)
 
         # results = []
         # for action_idx in actions_idx:

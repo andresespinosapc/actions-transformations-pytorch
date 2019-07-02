@@ -18,7 +18,7 @@ import time
 frame_feats_dim = 512
 model_dim = 512
 n_actions = 101
-batch_size = 6
+batch_size = 4
 batch_size_to_step = 50
 iter_to_step = int(batch_size_to_step / batch_size)
 n_frames = 25
@@ -46,7 +46,7 @@ def train(epoch, log_path):
 
     train_log_path = os.path.join(log_path, 'train_log.txt')
     log_data = ''
-    net.train(True)
+    net.train()
     optimizer.zero_grad()
     loss_list = []
     acc_list = []
@@ -64,7 +64,7 @@ def train(epoch, log_path):
             p_transformed.view(output_loss_dim,  p_transformed_shape[2]).to(device),
             e_embed.view(output_loss_dim, p_transformed_shape[2]).to(device),
             y.view(output_loss_dim).to(device)
-        )
+        ) / iter_to_step
         # print("loss: ", loss.item())
         
         loss.backward()
@@ -88,7 +88,7 @@ def train(epoch, log_path):
         log_data += '{} - Epoch: {}; Loss: {:.5f};\n'.format(
             datetime.today().replace(microsecond=0),
             epoch + 1, loss.item(),
-            accuracy,
+            np.mean(acc_list),
         )
         sys.stdout.flush()
 
@@ -106,7 +106,7 @@ def valid(epoch, log_path):
     dataset = iter(valid_set)
     pbar = tqdm(dataset)
 
-    net.train(False)
+    net.eval()
     valid_log_path = os.path.join(log_path, 'val_log.txt')
     log_data = ''
     loss_list = []
@@ -151,7 +151,7 @@ def valid(epoch, log_path):
 
             log_data += '{} - Epoch: {}; Loss: {:.5f}; Acc: {:.5f}\n'.format(
                 datetime.today().replace(microsecond=0),
-                epoch + 1, loss.item(), accuracy
+                epoch + 1, loss.item(), np.mean(acc_list)
             )
     
     with open(valid_log_path, 'a+') as f:

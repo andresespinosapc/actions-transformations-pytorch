@@ -9,12 +9,14 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from datetime import datetime
 import numpy as np
+from torch.optim import lr_scheduler
 
 from model import ActTransNet, FrameFeats
 from dataset import UCF101
 import time
 
-
+LR_DECAY = 0.1
+DECAY_PATIENCE = 5
 frame_feats_dim = 512*4
 model_dim = 512
 n_actions = 101
@@ -153,6 +155,8 @@ def valid(epoch, log_path):
                 datetime.today().replace(microsecond=0),
                 epoch + 1, loss.item(), np.mean(acc_list)
             )
+        
+        exp_lr_scheduler.step(np.mean(loss_list))
     
     with open(valid_log_path, 'a+') as f:
         f.write(log_data)
@@ -204,6 +208,7 @@ if __name__ == '__main__':
         lr=1e-4,
         # weight_decay=1e-4,
     )
+    exp_lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, factor=LR_DECAY, patience=DECAY_PATIENCE,verbose=True)
 
     if config.experiment is None:
         print('Starting new experiment...')
@@ -244,7 +249,7 @@ if __name__ == '__main__':
             os.path.join(checkpoint_path, file_name)
         ))
     # Run epochs
-    for epoch in range(cur_epoch, config.n_epochs):
+    for epoch in range(cur_epoch + 1, config.n_epochs):
         train(epoch, log_path)
         valid(epoch, log_path)
 

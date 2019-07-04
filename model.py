@@ -144,13 +144,13 @@ class ActTransNet(nn.Module):
         n_frames = frames_p.shape[1]
 
         frames_feats_p = self.frame_net_p(frames_p.view(-1, *self.input_dim))
-        print("frames_feats_p: ", frames_feats_p.size())
+        #print("frames_feats_p: ", frames_feats_p.size())
         frames_feats_p = frames_feats_p.view(batch_size, self.zp_limit_end, self.frame_feats_dim)
-        print("frames_feats_p: ", frames_feats_p)
+        #print("frames_feats_p: ", frames_feats_p)
         frames_feats_p = self.m(frames_feats_p)
         
         frames_feats_e = self.frame_net_e(frames_e.view(-1, *self.input_dim)).view(batch_size, n_frames - self.ze_limit_start, self.frame_feats_dim)
-        print("frames_feats_e: ", frames_feats_e)
+        #print("frames_feats_e: ", frames_feats_e)
         frames_feats_e = self.m(frames_feats_e)
         # Search latent variables
         self.frame_net_p.train(False)

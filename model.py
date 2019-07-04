@@ -44,8 +44,9 @@ class FrameFeats(nn.Module):
             self.pretrained_backbone = rgb_resnet50(pretrained=False, num_classes=101)
             pretrained_params_ucf101 = torch.load('ucf101_resnet50.pth.tar')
             self.pretrained_backbone.load_state_dict(pretrained_params_ucf101['state_dict'])
-            num_ftrs = self.pretrained_backbone.fc_action.in_features
-            self.pretrained_backbone.fc_action = nn.Linear(num_ftrs, out_dim)
+            #num_ftrs = self.pretrained_backbone.fc_action.in_features
+            #self.pretrained_backbone.fc_action = nn.Linear(num_ftrs, out_dim)
+            self.pretrained_backbone.fc_action = nn.Identity()
             # self.pretrained_backbone = models.resnet50(pretrained=False, num_classes=101)
             # self.pretrained_backbone.fc_action = self.pretrained_backbone.fc
             
@@ -133,6 +134,7 @@ class ActTransNet(nn.Module):
         self.n_ze_possible = ze_limits[1] - ze_limits[0] + 1
 
         self.input_dim = (3, 224, 224)
+        self.m = nn.GroupNorm(12, 12)
         self.frame_net_p = FrameFeats(frame_feats_dim)
         self.frame_net_e = FrameFeats(frame_feats_dim)
         self.transformation_net = TransformationNet(frame_feats_dim, model_dim, n_actions, **kwargs)
@@ -141,9 +143,15 @@ class ActTransNet(nn.Module):
         batch_size = frames_p.shape[0]
         n_frames = frames_p.shape[1]
 
-        frames_feats_p = self.frame_net_p(frames_p.view(-1, *self.input_dim)).view(batch_size, self.zp_limit_end, self.frame_feats_dim)
+        frames_feats_p = self.frame_net_p(frames_p.view(-1, *self.input_dim))
+        print("frames_feats_p: ", frames_feats_p.size())
+        frames_feats_p = frames_feats_p.view(batch_size, self.zp_limit_end, self.frame_feats_dim)
+        print("frames_feats_p: ", frames_feats_p)
+        frames_feats_p = self.m(frames_feats_p)
+        
         frames_feats_e = self.frame_net_e(frames_e.view(-1, *self.input_dim)).view(batch_size, n_frames - self.ze_limit_start, self.frame_feats_dim)
-
+        print("frames_feats_e: ", frames_feats_e)
+        frames_feats_e = self.m(frames_feats_e)
         # Search latent variables
         self.frame_net_p.train(False)
         self.frame_net_e.train(False)

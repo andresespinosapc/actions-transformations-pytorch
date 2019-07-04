@@ -15,10 +15,10 @@ from dataset import UCF101
 import time
 
 
-frame_feats_dim = 512
+frame_feats_dim = 512*4
 model_dim = 512
 n_actions = 101
-batch_size = 8
+batch_size = 2
 batch_size_to_step = 50
 iter_to_step = int(batch_size_to_step / batch_size)
 n_frames = 25

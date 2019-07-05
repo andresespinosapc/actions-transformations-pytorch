@@ -205,7 +205,7 @@ if __name__ == '__main__':
 
     optimizer = optim.Adam(
         net.parameters(),
-        lr=1e-4,
+        lr=1e-5,
         # weight_decay=1e-4,
     )
     exp_lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, factor=LR_DECAY, patience=DECAY_PATIENCE,verbose=True)
@@ -240,14 +240,22 @@ if __name__ == '__main__':
         default=-1
     )) + 1
     if cur_epoch != 0:
-        print('Loading checkpoint {}...'.format(str(cur_epoch).zfill(2)))
+        print('Loading checkpoint {}...'.format(str(cur_epoch + 1).zfill(2)))
         file_name = next(filter(
             lambda x: 'checkpoint_{}'.format(str(cur_epoch).zfill(2)) in x,
             os.listdir(checkpoint_path)
         ))
-        net.load_state_dict(torch.load(
-            os.path.join(checkpoint_path, file_name)
-        ))
+        #net.load_state_dict(torch.load(
+        #    os.path.join(checkpoint_path, file_name)
+        #))
+        checkpoint = torch.load(os.path.join(checkpoint_path, file_name))
+        net.load_state_dict(checkpoint['model_state_dict'])
+        exp_lr_scheduler.load_state_dict(checkpoint['scheduler'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        for state in optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.cuda()
     # Run epochs
     for epoch in range(cur_epoch + 1, config.n_epochs):
         train(epoch, log_path)
@@ -259,4 +267,9 @@ if __name__ == '__main__':
                 datetime.today().replace(microsecond=0)
             ), 'wb'
         ) as f:
-            torch.save(net.state_dict(), f)
+            #torch.save(net.state_dict(), f)
+            torch.save({
+                'model_state_dict': net.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler': exp_lr_scheduler.state_dict()
+            }, f)

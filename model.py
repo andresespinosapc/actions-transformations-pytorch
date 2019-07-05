@@ -123,6 +123,7 @@ class TransformationNet(nn.Module):
 class ActTransNet(nn.Module):
     def __init__(self, frame_feats_dim, model_dim, n_actions, zp_limits, ze_limits, criterion, **kwargs):
         super().__init__()
+        self.n_actions = n_actions
         self.frame_feats_dim = frame_feats_dim
         self.criterion = criterion
 
@@ -190,3 +191,40 @@ class ActTransNet(nn.Module):
         p_transformed, e_embed = self.transformation_net(precondition, effect)
 
         return p_transformed, e_embed
+
+    def evaluate(self, frames_p, frames_e):
+        batch_size = frames_p.shape[0]
+        n_frames = frames_p.shape[1]
+
+        frames_feats_p = self.frame_net_p(frames_p.view(-1, *self.input_dim))
+        #print("frames_feats_p: ", frames_feats_p.size())
+        frames_feats_p = frames_feats_p.view(batch_size, self.zp_limit_end, self.frame_feats_dim)
+        #print("frames_feats_p: ", frames_feats_p)
+        frames_feats_p = self.m(frames_feats_p)
+        
+        frames_feats_e = self.frame_net_e(frames_e.view(-1, *self.input_dim)).view(batch_size, n_frames - self.ze_limit_start, self.frame_feats_dim)
+        #print("frames_feats_e: ", frames_feats_e)
+        frames_feats_e = self.m(frames_feats_e)
+        # Search latent variables
+        self.frame_net_p.train(False)
+        self.frame_net_e.train(False)
+        self.transformation_net.train(False)
+        with torch.no_grad():
+            best_action = torch.empty((batch_size,)).to(device)
+            min_distance = torch.full((batch_size,), torch.finfo(torch.float).max).to(device)
+            for i in range(self.n_actions):
+                action = torch.full((batch_size,), i, dtype=torch.long).to(device)
+                for zp in self.zp_possible:
+                    for ze in range(self.n_ze_possible):
+                        precondition = frames_feats_p[:, :zp, :]
+                        effect = frames_feats_e[:, ze:,:]
+                        p_transformed, e_embed = self.transformation_net(precondition, effect, action)
+                        # Obtain distance
+                        is_positive = torch.ones((batch_size,)).to(device)
+                        loss = self.criterion(p_transformed, e_embed, is_positive)
+                        # Update min_distance, and best zp and ze
+                        better_mask = (loss < min_distance).float()
+                        best_action = best_action * (1 - better_mask) + action.float() * better_mask
+                        min_distance = min_distance * (1 - better_mask) + loss * better_mask
+
+        return best_action.long()

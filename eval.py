@@ -1,3 +1,4 @@
+import sys
 import os
 import math
 import torch
@@ -66,15 +67,18 @@ if __name__ == '__main__':
     predictions = []
     net.eval()
     with torch.no_grad():
-        for frames_p, frames_e, action in pbar:
+        for frames_p, frames_e, _ in pbar:
             cur_batch_size = frames_p.shape[0]
-            frames_p, frames_e, action = frames_p.to(device), frames_e.to(device), action.to(device)
+            frames_p, frames_e = frames_p.to(device), frames_e.to(device)
 
-            p_transformed, e_embed = net(frames_p, frames_e, action)
-            sim = F.cosine_similarity(p_transformed, e_embed, dim=2)
-            prediction = sim.argmax(dim=1)
+            # p_transformed, e_embed = net(frames_p, frames_e, action)
+            # sim = F.cosine_similarity(p_transformed, e_embed, dim=2)
+            # prediction = sim.argmax(dim=1)
+            prediction = net.evaluate(frames_p, frames_e)
 
             predictions.extend(list(map(lambda x: str(x.item()), prediction)))
 
+    print(predictions)
+    sys.stdout.flush()
     with open(os.path.join(config.output_dir, 'act_trans_predictions.txt'), 'w') as f:
         f.write('\n'.join(predictions))

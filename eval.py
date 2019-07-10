@@ -52,7 +52,7 @@ if __name__ == '__main__':
         net = nn.DataParallel(net)
     net = net.to(device)
 
-    net.load_state_dict(torch.load(config.checkpoint))
+    net.load_state_dict(torch.load(config.checkpoint)['model_state_dict'])
 
     ucf101 = UCF101(
         zp_limits[1], ze_limits[0],

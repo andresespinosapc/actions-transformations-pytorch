@@ -205,7 +205,7 @@ if __name__ == '__main__':
 
     optimizer = optim.Adam(
         net.parameters(),
-        lr=1e-5,
+        lr=1e-4,
         # weight_decay=1e-4,
     )
     exp_lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, factor=LR_DECAY, patience=DECAY_PATIENCE,verbose=True)
@@ -249,6 +249,7 @@ if __name__ == '__main__':
         #    os.path.join(checkpoint_path, file_name)
         #))
         checkpoint = torch.load(os.path.join(checkpoint_path, file_name))
+        cur_epoch+=1
         net.load_state_dict(checkpoint['model_state_dict'])
         exp_lr_scheduler.load_state_dict(checkpoint['scheduler'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -257,7 +258,7 @@ if __name__ == '__main__':
                 if isinstance(v, torch.Tensor):
                     state[k] = v.cuda()
     # Run epochs
-    for epoch in range(cur_epoch + 1, config.n_epochs):
+    for epoch in range(cur_epoch, config.n_epochs):
         train(epoch, log_path)
         valid(epoch, log_path)
 
